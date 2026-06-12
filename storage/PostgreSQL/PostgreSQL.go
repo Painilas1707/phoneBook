@@ -86,3 +86,19 @@ func (s *Storage) DeleteContact(id int64) error {
 	}
 	return nil
 }
+
+func (s *Storage) UpdateContact(contact StructUser.UserPhoneBook) error {
+	const fn = "Storage.postgreSQL.UpdateContact"
+	res, err := s.db.Exec("UPDATE phonebook SET contact_fio = $1, birth_date = $2, phone_number = $3, email = $4 WHERE id = $5", contact.ContactFIO, contact.BirthDate, contact.PhoneNumber, contact.Email, contact.ID)
+	if err != nil {
+		return fmt.Errorf("%s: %w", fn, err)
+	}
+	rowsAffected, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("%s: %w", fn, err)
+	}
+	if rowsAffected == 0 {
+		return fmt.Errorf("%s: %w", fn, storage.ErrUserNotFound)
+	}
+	return nil
+}
