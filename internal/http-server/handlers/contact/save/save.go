@@ -9,16 +9,16 @@ import (
 	"github.com/go-chi/chi/middleware"
 	"github.com/go-chi/render"
 	"github.com/go-playground/validator/v10"
-	"log"
 	"log/slog"
 	"net/http"
+	"time"
 )
 
 type Request struct {
-	ContactFIO  string `json:"contact_fio" validate:"required"`
-	BirthDate   string `json:"birth_date" validate:"required"`
-	PhoneNumber string `json:"phone_number" validate:"required"`
-	Email       string `json:"email" validate:"required,email"`
+	ContactFIO  string    `json:"contact_fio" validate:"required"`
+	BirthDate   time.Time `json:"birth_date" validate:"required"`
+	PhoneNumber string    `json:"phone_number" validate:"required"`
+	Email       string    `json:"email" validate:"required,email"`
 }
 
 type Response struct {
@@ -34,7 +34,7 @@ type ContactSaver interface {
 func New(log *slog.Logger, contactSaver ContactSaver) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		const fn = "handlers.contact.save.New"
-		log.With(
+		log = log.With(
 			slog.String("fn", fn),
 			slog.String("request_id", middleware.GetReqID(r.Context())))
 
@@ -43,7 +43,7 @@ func New(log *slog.Logger, contactSaver ContactSaver) http.HandlerFunc {
 		err := render.DecodeJSON(r.Body, &req)
 		if err != nil {
 			log.Error("failed to parse request", slogSL.Err(err))
-
+			w.WriteHeader(http.StatusBadRequest)
 			render.JSON(w, r, resp.Error("failed to parse request"))
 			return
 
@@ -52,32 +52,22 @@ func New(log *slog.Logger, contactSaver ContactSaver) http.HandlerFunc {
 
 		if err := validator.New().Struct(req); err != nil {
 			log.Error("failed to validate request", slogSL.Err(err))
-
+			w.WriteHeader(http.StatusBadRequest)
 			render.JSON(w, r, resp.Error("failed to validate request"))
 			return
 		}
 
-		contactFIO := req.ContactFIO
-		if contactFIO == "" {
-			log.Error("contactFIO field is required", slogSL.Err(err))
-		}
-		BirthDate := req.BirthDate
-		if BirthDate == "" {
-			log.Error("BirthDate field is required", slogSL.Err(err))
-		}
-		phoneNumber := req.PhoneNumber
-		if phoneNumber == "" {
-			log.Error("phoneNumber field is required", slogSL.Err(err))
-		}
-		Email := req.Email
-		if Email == "" {
-			log.Error("Email field is required", slogSL.Err(err))
+		contact := StructUser.UserPhoneBook{
+			ContactFIO:  req.ContactFIO,
+			BirthDate:   req.BirthDate,
+			PhoneNumber: req.PhoneNumber,
+			Email:       req.Email,
 		}
 
-		id, err := contactSaver.SaveContact(StructUser.UserPhoneBook{})
+		id, err := contactSaver.SaveContact(contact)
 		if errors.Is(err, storage.ErrUserAlreadyExists) {
 			log.Info("contact already exists", slogSL.Err(err))
-
+			w.WriteHeader(http.StatusConflict)
 			render.JSON(w, r, resp.Error("contact already exists"))
 
 			return
@@ -85,9 +75,9 @@ func New(log *slog.Logger, contactSaver ContactSaver) http.HandlerFunc {
 
 		if err != nil {
 			log.Error("failed to save contact", slogSL.Err(err))
-
+			w.WriteHeader(http.StatusConflict)
 			render.JSON(w, r, resp.Error("failed to save contact"))
-			
+
 			return
 		}
 		log.Info("contact added", slog.Int64("id", id))
